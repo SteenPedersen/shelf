@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Game Shelf</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@zxing/library@latest/umd/index.min.js"></script>
+<style>
+  :root{
+    --bg:#171A22;
+    --surface:#222736;
+    --surface-2:#2B3145;
+    --line:#3A4059;
+    --text:#EDEEF2;
+    --muted:#9098AC;
+    --amber:#E0A458;
+    --teal:#4FB4A6;
+    --red:#D96C6C;
+    --radius:14px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
+    font-family:'Inter',system-ui,-apple-system,sans-serif;
+    -webkit-font-smoothing:antialiased;overscroll-behavior:none;}
+  h1,h2,h3{font-family:'Space Grotesk',sans-serif;margin:0;letter-spacing:-0.01em;}
+  .mono{font-family:'JetBrains Mono',monospace;}
+  #app{display:flex;flex-direction:column;height:100vh;height:100dvh;}
+
+  header{padding:calc(env(safe-area-inset-top) + 18px) 20px 14px;
+    border-bottom:1px solid var(--line);flex-shrink:0;}
+  header h1{font-size:22px;}
+  header p{margin:2px 0 0;color:var(--muted);font-size:13px;}
+
+  main{flex:1;overflow-y:auto;padding:18px 18px calc(90px + env(safe-area-inset-bottom));}
+
+  nav.tabbar{position:fixed;left:0;right:0;bottom:0;display:flex;
+    background:rgba(23,26,34,0.92);backdrop-filter:blur(14px);
+    border-top:1px solid var(--line);padding:8px 12px calc(10px + env(safe-area-inset-bottom));
+    gap:8px;z-index:20;}
+  nav.tabbar button{flex:1;background:none;border:none;color:var(--muted);
+    display:flex;flex-direction:column;align-items:center;gap:3px;
+    font-size:11px;font-family:'Inter',sans-serif;padding:6px 0;border-radius:10px;}
+  nav.tabbar button svg{width:22px;height:22px;stroke:var(--muted);fill:none;stroke-width:1.8;}
+  nav.tabbar button.active{color:var(--amber);}
+  nav.tabbar button.active svg{stroke:var(--amber);}
+
+  .view{display:none;} .view.active{display:block;}
+
+  /* --- Scan view --- */
+  .scan-stage{position:relative;border-radius:var(--radius);overflow:hidden;
+    background:#000;aspect-ratio:3/4;max-height:52vh;display:flex;
+    align-items:center;justify-content:center;border:1px solid var(--line);}
+  .scan-stage video{width:100%;height:100%;object-fit:cover;}
+  .scan-frame{position:absolute;inset:14%;border:2px solid var(--amber);
+    border-radius:10px;opacity:.85;pointer-events:none;}
+  .scan-placeholder{color:var(--muted);text-align:center;padding:0 30px;font-size:13.5px;}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;
+    border:none;border-radius:11px;padding:13px 18px;font-size:15px;font-weight:600;
+    font-family:'Inter',sans-serif;cursor:pointer;width:100%;}
+  .btn-primary{background:var(--amber);color:#1B1706;}
+  .btn-secondary{background:var(--surface-2);color:var(--text);border:1px solid var(--line);}
+  .btn-teal{background:var(--teal);color:#0D231F;}
+  .btn-danger{background:transparent;color:var(--red);border:1px solid rgba(217,108,108,.4);}
+  .row{display:flex;gap:10px;margin-top:12px;}
+  .manual-entry{margin-top:16px;}
+  .manual-entry label{font-size:12px;color:var(--muted);display:block;margin-bottom:6px;}
+  input[type=text], textarea{width:100%;background:var(--surface);border:1px solid var(--line);
+    color:var(--text);border-radius:10px;padding:11px 13px;font-size:15px;font-family:'Inter',sans-serif;}
+  textarea{resize:vertical;min-height:70px;}
+  .field{margin-bottom:14px;}
+  .status-line{font-size:13px;color:var(--muted);margin-top:10px;min-height:18px;}
+  .status-line.err{color:var(--red);}
+  .status-line.ok{color:var(--teal);}
+
+  /* --- Edit / detail card --- */
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+    padding:16px;margin-top:16px;}
+  .cover-row{display:flex;gap:14px;}
+  .cover-thumb{width:88px;height:118px;border-radius:8px;background:var(--surface-2);
+    background-size:cover;background-position:center;flex-shrink:0;
+    border:1px solid var(--line);display:flex;align-items:center;justify-content:center;
+    color:var(--muted);font-size:11px;text-align:center;overflow:hidden;}
+  .barcode-chip{display:inline-block;background:var(--surface-2);border:1px solid var(--line);
+    border-radius:7px;padding:4px 9px;font-size:12.5px;color:var(--muted);margin-top:8px;}
+
+  .photo-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:10px;}
+  .photo-slot{aspect-ratio:1;border-radius:9px;border:1.5px dashed var(--line);
+    background:var(--surface-2);display:flex;align-items:center;justify-content:center;
+    position:relative;overflow:hidden;color:var(--muted);}
+  .photo-slot img{width:100%;height:100%;object-fit:cover;}
+  .photo-slot .rm{position:absolute;top:3px;right:3px;background:rgba(0,0,0,.6);
+    color:#fff;border:none;border-radius:50%;width:20px;height:20px;font-size:12px;line-height:1;}
+  .photo-slot input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;}
+
+  /* --- Library --- */
+  .lib-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
+  .lib-item{cursor:pointer;}
+  .lib-cover{width:100%;aspect-ratio:2/3;border-radius:9px;background:var(--surface);
+    border:1px solid var(--line);background-size:cover;background-position:center;
+    display:flex;align-items:center;justify-content:center;color:var(--muted);
+    font-size:11px;text-align:center;padding:6px;overflow:hidden;}
+  .lib-title{font-size:12.5px;margin-top:6px;line-height:1.25;color:var(--text);}
+  .lib-empty{color:var(--muted);text-align:center;padding:60px 20px;font-size:14px;}
+
+  .modal-bg{position:fixed;inset:0;background:rgba(10,11,16,.7);z-index:30;
+    display:flex;align-items:flex-end;}
+  .modal{background:var(--bg);width:100%;max-height:88vh;overflow-y:auto;
+    border-radius:18px 18px 0 0;padding:18px 18px calc(24px + env(safe-area-inset-bottom));
+    border-top:1px solid var(--line);}
+  .modal-handle{width:36px;height:4px;background:var(--line);border-radius:3px;margin:0 auto 14px;}
+  .modal h2{font-size:19px;margin-bottom:4px;}
+  .modal .desc{color:var(--muted);font-size:14px;line-height:1.5;margin-top:10px;}
+  .modal-photos{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px;}
+  .modal-photos img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:9px;
+    border:1px solid var(--line);}
+
+  .rawg-result{display:flex;gap:10px;align-items:center;padding:8px;border-radius:10px;
+    background:var(--surface-2);border:1px solid var(--line);margin-bottom:7px;cursor:pointer;}
+  .rawg-thumb{width:44px;height:44px;border-radius:7px;background:#1c2030;background-size:cover;
+    background-position:center;flex-shrink:0;}
+  .rawg-name{font-size:14px;font-weight:600;}
+  .rawg-meta{font-size:12px;color:var(--muted);margin-top:2px;}
+
+  .settings-note{background:var(--surface);border:1px solid var(--line);border-radius:12px;
+    padding:14px;font-size:12.5px;color:var(--muted);line-height:1.5;margin-top:16px;}
+  .settings-note b{color:var(--text);}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>Game Shelf</h1>
+    <p id="header-sub">Scan · gem · gennemse din samling</p>
+  </header>
+
+  <main>
+    <!-- SCAN VIEW -->
+    <section id="view-scan" class="view active">
+      <div class="scan-stage" id="scan-stage">
+        <div class="scan-placeholder" id="scan-placeholder">Tryk "Start scanning" og hold stregkoden op mod kameraet</div>
+        <video id="video" playsinline muted style="display:none"></video>
+        <div class="scan-frame" id="scan-frame" style="display:none"></div>
+      </div>
+      <div class="row">
+        <button class="btn btn-teal" id="btn-start-scan">Start scanning</button>
+        <button class="btn btn-secondary" id="btn-stop-scan" style="display:none">Stop</button>
+      </div>
+      <div class="status-line" id="scan-status"></div>
+
+      <div class="manual-entry">
+        <label>Eller indtast stregkode manuelt</label>
+        <div class="row" style="margin-top:0">
+          <input type="text" id="manual-barcode" placeholder="fx 0711719812345" inputmode="numeric">
+          <button class="btn btn-secondary" style="width:auto;padding:13px 16px" id="btn-manual-lookup">Slå op</button>
+        </div>
+      </div>
+
+      <div id="edit-card" style="display:none"></div>
+    </section>
+
+    <!-- LIBRARY VIEW -->
+    <section id="view-library" class="view">
+      <div class="lib-grid" id="lib-grid"></div>
+      <div class="lib-empty" id="lib-empty" style="display:none">Din hylde er tom endnu.<br>Scan dit første spil for at starte samlingen.</div>
+    </section>
+
+    <!-- SETTINGS / INFO VIEW -->
+    <section id="view-info" class="view">
+      <h2 style="margin-bottom:10px">Spildatabase (RAWG)</h2>
+      <div class="settings-note">
+        For at få rigtig titel, beskrivelse og cover for PS1-PS5-spil bruger appen spildatabasen <b>RAWG.io</b>. Du skal bruge en gratis API-nøgle (ingen kreditkort):
+        <br>1. Gå til <span class="mono">rawg.io/apidocs</span> i Safari<br>
+        2. Opret en gratis konto og find din API-nøgle<br>
+        3. Indsæt den herunder
+      </div>
+      <div class="field" style="margin-top:12px">
+        <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">RAWG API-nøgle</label>
+        <input type="text" id="f-rawg-key" placeholder="Indsæt din nøgle her">
+      </div>
+      <div class="row"><button class="btn btn-primary" id="btn-save-key">Gem nøgle</button></div>
+      <div class="status-line" id="key-status"></div>
+
+      <h2 style="margin:22px 0 10px">Om appen</h2>
+      <div class="settings-note">
+        <b>Sådan virker opslaget:</b> Stregkoden bruges kun som et gæt på søgeordet. Den egentlige titel, cover og beskrivelse finder du ved at søge i RAWG og vælge det rigtige spil fra listen — det er langt mere pålideligt end automatisk stregkode-opslag, som ikke dækker ældre PlayStation-stregkoder godt.
+      </div>
+      <div class="settings-note">
+        <b>Kamera kræver HTTPS.</b> Hvis siden er åbnet direkte som fil (file://), kan Safari nægte kameraadgang. Læg filen på en https-adresse for at kunne scanne og tage billeder.
+      </div>
+      <div class="settings-note">
+        <b>Alt gemmes lokalt</b> i denne iPhone/iPad's browser (IndexedDB). Der sendes intet til en server undtagen selve søgningen i RAWG. Sletter du Safaris data for siden, forsvinder samlingen.
+      </div>
+      <div class="row">
+        <button class="btn btn-secondary" id="btn-export">Eksportér backup (.json)</button>
+      </div>
+      <div class="row">
+        <button class="btn btn-danger" id="btn-wipe">Slet hele samlingen</button>
+      </div>
+    </section>
+  </main>
+
+  <nav class="tabbar">
+    <button class="tab-btn active" data-view="scan">
+      <svg viewBox="0 0 24 24"><path d="M4 7V5a1 1 0 0 1 1-1h2M20 7V5a1 1 0 0 0-1-1h-2M4 17v2a1 1 0 0 0 1 1h2M20 17v2a1 1 0 0 1-1 1h-2M7 9v6M11 9v6M15 9v6M17.5 9v6"/></svg>
+      Scan
+    </button>
+    <button class="tab-btn" data-view="library">
+      <svg viewBox="0 0 24 24"><path d="M4 5h4v16H4zM10 5h4v16h-4zM16 5h4v16h-4z"/></svg>
+      Hylde
+    </button>
+    <button class="tab-btn" data-view="info">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 16v-5M12 8h.01"/></svg>
+      Info
+    </button>
+  </nav>
+</div>
+
+<div id="modal-root"></div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ---------------- IndexedDB ---------------- */
+  const DB_NAME = "gameShelfDB", STORE = "games";
+  let db;
+  function openDB(){
+    return new Promise((resolve, reject)=>{
+      const req = indexedDB.open(DB_NAME, 1);
+      req.onupgradeneeded = e => {
+        const d = e.target.result;
+        if(!d.objectStoreNames.contains(STORE)){
+          d.createObjectStore(STORE, {keyPath:"id"});
+        }
+      };
+      req.onsuccess = e => { db = e.target.result; resolve(db); };
+      req.onerror = e => reject(e);
+    });
+  }
+  function dbAll(){
+    return new Promise((resolve,reject)=>{
+      const tx = db.transaction(STORE,"readonly");
+      const req = tx.objectStore(STORE).getAll();
+      req.onsuccess = ()=>resolve(req.result.sort((a,b)=>b.dateAdded-a.dateAdded));
+      req.onerror = reject;
+    });
+  }
+  function dbPut(game){
+    return new Promise((resolve,reject)=>{
+      const tx = db.transaction(STORE,"readwrite");
+      tx.objectStore(STORE).put(game);
+      tx.oncomplete = ()=>resolve();
+      tx.onerror = reject;
+    });
+  }
+  function dbDelete(id){
+    return new Promise((resolve,reject)=>{
+      const tx = db.transaction(STORE,"readwrite");
+      tx.objectStore(STORE).delete(id);
+      tx.oncomplete = ()=>resolve();
+      tx.onerror = reject;
+    });
+  }
+  function dbClear(){
+    return new Promise((resolve,reject)=>{
+      const tx = db.transaction(STORE,"readwrite");
+      tx.objectStore(STORE).clear();
+      tx.oncomplete = ()=>resolve();
+      tx.onerror = reject;
+    });
+  }
+
+  /* ---------------- Tabs ---------------- */
+  const views = {scan:document.getElementById("view-scan"),
+                 library:document.getElementById("view-library"),
+                 info:document.getElementById("view-info")};
+  document.querySelectorAll(".tab-btn").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      document.querySelectorAll(".tab-btn").forEach(b=>b.classList.remove("active"));
+      btn.classList.add("active");
+      Object.values(views).forEach(v=>v.classList.remove("active"));
+      views[btn.dataset.view].classList.add("active");
+      if(btn.dataset.view === "library") renderLibrary();
+    });
+  });
+
+  /* ---------------- Barcode scanning (ZXing) ---------------- */
+  let codeReader = null;
+  let scanning = false;
+  const video = document.getElementById("video");
+  const placeholder = document.getElementById("scan-placeholder");
+  const frame = document.getElementById("scan-frame");
+  const statusEl = document.getElementById("scan-status");
+
+  function setStatus(msg, kind){
+    statusEl.textContent = msg || "";
+    statusEl.className = "status-line" + (kind ? " "+kind : "");
+  }
+
+  document.getElementById("btn-start-scan").addEventListener("click", startScan);
+  document.getElementById("btn-stop-scan").addEventListener("click", stopScan);
+
+  async function startScan(){
+    if(!window.ZXingBrowser && !window.ZXing){
+      setStatus("Kunne ikke indlæse scannerbiblioteket. Tjek internetforbindelsen.", "err");
+      return;
+    }
+    try{
+      setStatus("Åbner kamera…");
+      video.style.display = "block";
+      frame.style.display = "block";
+      placeholder.style.display = "none";
+      document.getElementById("btn-start-scan").style.display = "none";
+      document.getElementById("btn-stop-scan").style.display = "block";
+
+      const hints = new Map();
+      const formats = [
+        ZXing.BarcodeFormat.EAN_13, ZXing.BarcodeFormat.EAN_8,
+        ZXing.BarcodeFormat.UPC_A, ZXing.BarcodeFormat.UPC_E,
+        ZXing.BarcodeFormat.CODE_128
+      ];
+      hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, formats);
+      codeReader = new ZXing.BrowserMultiFormatReader(hints);
+      scanning = true;
+
+      codeReader.decodeFromConstraints(
+        { audio:false, video:{ facingMode:{ideal:"environment"} } },
+        video,
+        (result, err) => {
+          if(result && scanning){
+            scanning = false;
+            const code = result.getText();
+            navigator.vibrate && navigator.vibrate(80);
+            setStatus("Fandt stregkode: " + code, "ok");
+            stopScan();
+            lookupBarcode(code);
+          }
+        }
+      );
+    }catch(e){
+      console.error(e);
+      setStatus("Kunne ikke få adgang til kameraet. Tjek tilladelser, eller indtast koden manuelt nedenfor.", "err");
+      stopScan();
+    }
+  }
+
+  function stopScan(){
+    scanning = false;
+    if(codeReader){
+      try{ codeReader.reset(); }catch(e){}
+      codeReader = null;
+    }
+    video.style.display = "none";
+    frame.style.display = "none";
+    placeholder.style.display = "flex";
+    document.getElementById("btn-start-scan").style.display = "block";
+    document.getElementById("btn-stop-scan").style.display = "none";
+  }
+
+  document.getElementById("btn-manual-lookup").addEventListener("click", ()=>{
+    const code = document.getElementById("manual-barcode").value.trim();
+    if(!code){ setStatus("Indtast en stregkode først.", "err"); return; }
+    lookupBarcode(code);
+  });
+
+  /* ---------------- Barcode lookup ---------------- */
+  function getRawgKey(){ return localStorage.getItem("rawgApiKey") || ""; }
+
+  async function lookupBarcode(code){
+    setStatus("Gætter på et søgeord ud fra stregkoden…");
+    let guess = "";
+    try{
+      const resp = await fetch("https://api.upcitemdb.com/prod/trial/lookup?upc=" + encodeURIComponent(code));
+      if(resp.ok){
+        const data = await resp.json();
+        if(data.items && data.items.length){
+          guess = (data.items[0].title || "").replace(/playstation|ps[1-5]|sony/gi,"").trim();
+        }
+      }
+    }catch(e){ /* ignore, guess stays empty */ }
+    setStatus(guess ? "Klar til søgning: " + guess : "Intet gæt fundet — søg selv efter titlen nedenfor.", guess ? "ok" : "");
+    openEditCard(code, guess, "", "");
+    if(guess) searchRawg(guess);
+  }
+
+  /* ---------------- RAWG game database search ---------------- */
+  async function searchRawg(query){
+    const key = getRawgKey();
+    const resultsBox = document.getElementById("rawg-results");
+    if(!key){
+      resultsBox.innerHTML = `<div class="status-line err">Tilføj din gratis RAWG API-nøgle under "Info"-fanen for at søge i spildatabasen.</div>`;
+      return;
+    }
+    if(!query){ return; }
+    resultsBox.innerHTML = `<div class="status-line">Søger i RAWG…</div>`;
+    try{
+      const url = "https://api.rawg.io/api/games?key=" + encodeURIComponent(key)
+        + "&search=" + encodeURIComponent(query) + "&page_size=6";
+      const resp = await fetch(url);
+      if(!resp.ok) throw new Error("HTTP " + resp.status);
+      const data = await resp.json();
+      const games = data.results || [];
+      if(!games.length){
+        resultsBox.innerHTML = `<div class="status-line err">Ingen resultater. Prøv et andet søgeord.</div>`;
+        return;
+      }
+      resultsBox.innerHTML = games.map((g,i) => `
+        <div class="rawg-result" data-i="${i}">
+          <div class="rawg-thumb" style="${g.background_image ? `background-image:url('${g.background_image}')` : ""}"></div>
+          <div class="rawg-info">
+            <div class="rawg-name">${escapeHtml(g.name)}</div>
+            <div class="rawg-meta">${(g.platforms||[]).map(p=>p.platform.name).filter(n=>/playstation|ps[1-5]/i.test(n)).join(", ") || (g.platforms||[]).map(p=>p.platform.name).slice(0,3).join(", ")}${g.released ? " · " + g.released.slice(0,4) : ""}</div>
+          </div>
+        </div>
+      `).join("");
+      resultsBox.querySelectorAll(".rawg-result").forEach(el=>{
+        el.addEventListener("click", async ()=>{
+          const g = games[parseInt(el.dataset.i,10)];
+          resultsBox.innerHTML = `<div class="status-line">Henter detaljer…</div>`;
+          let description = g.description_raw || "";
+          try{
+            const dResp = await fetch("https://api.rawg.io/api/games/" + g.id + "?key=" + encodeURIComponent(key));
+            if(dResp.ok){
+              const full = await dResp.json();
+              description = (full.description_raw || description || "").split("\n")[0];
+            }
+          }catch(e){/* keep short description */}
+          document.getElementById("f-title").value = g.name;
+          document.getElementById("f-desc").value = description;
+          document.getElementById("f-cover").value = g.background_image || "";
+          loadCoverPreview(g.background_image || "");
+          resultsBox.innerHTML = `<div class="status-line ok">"${escapeHtml(g.name)}" valgt ✓</div>`;
+        });
+      });
+    }catch(e){
+      console.error(e);
+      resultsBox.innerHTML = `<div class="status-line err">Søgning fejlede (tjek internetforbindelse og API-nøgle).</div>`;
+    }
+  }
+
+  /* ---------------- Edit card (before saving) ---------------- */
+  let pendingPhotos = []; // array of base64 strings, up to 5
+  let pendingCoverBase64 = "";
+
+  function openEditCard(code, title, description, coverUrl){
+    pendingPhotos = [];
+    pendingCoverBase64 = "";
+    const card = document.getElementById("edit-card");
+    card.style.display = "block";
+    card.innerHTML = `
+      <div class="card">
+        <span class="barcode-chip mono">${escapeHtml(code)}</span>
+        <div class="field" style="margin-top:12px;margin-bottom:0">
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">Søg i spildatabase (RAWG)</label>
+          <div class="row" style="margin-top:0">
+            <input type="text" id="f-search" value="${escapeAttr(title)}" placeholder="fx God of War">
+            <button class="btn btn-teal" style="width:auto;padding:13px 16px" id="btn-do-search">Søg</button>
+          </div>
+        </div>
+        <div id="rawg-results" style="margin-top:10px"></div>
+
+        <div class="cover-row" style="margin-top:16px">
+          <div class="cover-thumb" id="cover-preview">${coverUrl ? "" : "Intet cover"}</div>
+          <div style="flex:1">
+            <div class="field" style="margin-bottom:8px">
+              <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">Titel</label>
+              <input type="text" id="f-title" value="${escapeAttr(title)}" placeholder="Spillets titel">
+            </div>
+          </div>
+        </div>
+        <div class="field" style="margin-top:14px">
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">Beskrivelse</label>
+          <textarea id="f-desc" placeholder="Kort beskrivelse af spillet">${escapeHtml(description)}</textarea>
+        </div>
+        <div class="field">
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">Cover-billede URL (kan rettes)</label>
+          <input type="text" id="f-cover" value="${escapeAttr(coverUrl)}" placeholder="https://…">
+        </div>
+        <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:2px">Dine egne billeder (op til 5, taget med kamera)</label>
+        <div class="row" style="margin-top:8px">
+          <button class="btn btn-secondary" id="btn-take-photo">📷 Tag billede (<span id="photo-count">0</span>/5)</button>
+        </div>
+        <input type="file" accept="image/*" capture="environment" id="camera-input" style="display:none">
+        <div class="photo-grid" id="photo-grid"></div>
+        <div class="row">
+          <button class="btn btn-primary" id="btn-save-game">Gem i samlingen</button>
+        </div>
+        <div class="row">
+          <button class="btn btn-secondary" id="btn-cancel-edit">Annullér</button>
+        </div>
+      </div>
+    `;
+    renderPhotoGrid();
+    setupCameraCapture();
+    if(coverUrl) loadCoverPreview(coverUrl);
+
+    document.getElementById("f-cover").addEventListener("change", (e)=>{
+      loadCoverPreview(e.target.value.trim());
+    });
+    document.getElementById("btn-do-search").addEventListener("click", ()=>{
+      const q = document.getElementById("f-search").value.trim();
+      if(q) searchRawg(q);
+    });
+    document.getElementById("btn-cancel-edit").addEventListener("click", ()=>{
+      card.style.display = "none";
+      card.innerHTML = "";
+      document.getElementById("manual-barcode").value = "";
+    });
+    document.getElementById("btn-save-game").addEventListener("click", saveCurrentGame);
+    card.scrollIntoView({behavior:"smooth", block:"start"});
+  }
+
+  function loadCoverPreview(url){
+    const preview = document.getElementById("cover-preview");
+    if(!url){ preview.style.backgroundImage = ""; preview.textContent = "Intet cover"; pendingCoverBase64=""; return; }
+    preview.textContent = "Henter…";
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = ()=>{
+      try{
+        const canvas = document.createElement("canvas");
+        const maxW = 300;
+        const scale = Math.min(1, maxW / img.width);
+        canvas.width = img.width * scale;
+        canvas.height = img.height * scale;
+        canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+        pendingCoverBase64 = canvas.toDataURL("image/jpeg", 0.85);
+        preview.style.backgroundImage = `url(${pendingCoverBase64})`;
+        preview.textContent = "";
+      }catch(e){
+        // CORS blocked canvas export — fall back to remote URL only
+        pendingCoverBase64 = "";
+        preview.style.backgroundImage = `url(${url})`;
+        preview.textContent = "";
+      }
+    };
+    img.onerror = ()=>{ preview.style.backgroundImage=""; preview.textContent = "Kunne ikke hente"; };
+    img.src = url;
+  }
+
+  function renderPhotoGrid(){
+    const grid = document.getElementById("photo-grid");
+    grid.innerHTML = "";
+    pendingPhotos.forEach((photo,i)=>{
+      const slot = document.createElement("div");
+      slot.className = "photo-slot";
+      slot.innerHTML = `<img src="${photo}"><button class="rm" data-i="${i}">×</button>`;
+      grid.appendChild(slot);
+    });
+    const countEl = document.getElementById("photo-count");
+    if(countEl) countEl.textContent = pendingPhotos.length;
+    const takeBtn = document.getElementById("btn-take-photo");
+    if(takeBtn) takeBtn.disabled = pendingPhotos.length >= 5;
+    grid.querySelectorAll(".rm").forEach(btn=>{
+      btn.addEventListener("click", (e)=>{
+        const idx = parseInt(e.currentTarget.dataset.i,10);
+        pendingPhotos.splice(idx,1);
+        renderPhotoGrid();
+      });
+    });
+  }
+
+  function setupCameraCapture(){
+    const camInput = document.getElementById("camera-input");
+    const takeBtn = document.getElementById("btn-take-photo");
+    takeBtn.addEventListener("click", ()=>{
+      if(pendingPhotos.length >= 5) return;
+      camInput.value = ""; // allow re-picking same camera again
+      camInput.click();
+    });
+    camInput.addEventListener("change", (e)=>{
+      const file = e.target.files[0];
+      if(!file) return;
+      resizeImageFile(file, 900).then(b64=>{
+        pendingPhotos.push(b64);
+        renderPhotoGrid();
+        // Straight away invite the next shot if under 5 — one tap per photo, in quick succession
+        if(pendingPhotos.length < 5){
+          setStatus2("Billede " + pendingPhotos.length + "/5 gemt — tryk igen for at tage det næste.", "ok");
+        } else {
+          setStatus2("Alle 5 billeder taget ✓", "ok");
+        }
+      });
+    });
+  }
+
+  function setStatus2(msg, kind){
+    const el = document.getElementById("scan-status");
+    el.textContent = msg;
+    el.className = "status-line" + (kind?" "+kind:"");
+  }
+
+  function resizeImageFile(file, maxDim){
+    return new Promise((resolve)=>{
+      const reader = new FileReader();
+      reader.onload = ()=>{
+        const img = new Image();
+        img.onload = ()=>{
+          const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+          const canvas = document.createElement("canvas");
+          canvas.width = img.width * scale;
+          canvas.height = img.height * scale;
+          canvas.getContext("2d").drawImage(img,0,0,canvas.width,canvas.height);
+          resolve(canvas.toDataURL("image/jpeg", 0.82));
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function saveCurrentGame(){
+    const title = document.getElementById("f-title").value.trim() || "Uden titel";
+    const description = document.getElementById("f-desc").value.trim();
+    const coverUrlField = document.getElementById("f-cover").value.trim();
+    const barcode = document.querySelector("#edit-card .barcode-chip").textContent.trim();
+    const photos = pendingPhotos.filter(Boolean);
+
+    const game = {
+      id: barcode + "_" + Date.now(),
+      barcode, title, description,
+      cover: pendingCoverBase64 || coverUrlField || "",
+      photos,
+      dateAdded: Date.now()
+    };
+    await dbPut(game);
+    setStatus("Gemt i din hylde ✓", "ok");
+    document.getElementById("edit-card").style.display = "none";
+    document.getElementById("edit-card").innerHTML = "";
+    document.getElementById("manual-barcode").value = "";
+    document.querySelector('.tab-btn[data-view="library"]').click();
+  }
+
+  /* ---------------- Library ---------------- */
+  async function renderLibrary(){
+    const grid = document.getElementById("lib-grid");
+    const empty = document.getElementById("lib-empty");
+    const games = await dbAll();
+    if(!games.length){
+      grid.innerHTML = "";
+      empty.style.display = "block";
+      return;
+    }
+    empty.style.display = "none";
+    grid.innerHTML = games.map(g => `
+      <div class="lib-item" data-id="${g.id}">
+        <div class="lib-cover" style="${g.cover ? `background-image:url('${g.cover}')` : ""}">
+          ${g.cover ? "" : escapeHtml(g.title)}
+        </div>
+        <div class="lib-title">${escapeHtml(g.title)}</div>
+      </div>
+    `).join("");
+    grid.querySelectorAll(".lib-item").forEach(el=>{
+      el.addEventListener("click", ()=> openDetail(el.dataset.id, games));
+    });
+  }
+
+  function openDetail(id, games){
+    const g = games.find(x=>x.id===id);
+    if(!g) return;
+    const root = document.getElementById("modal-root");
+    root.innerHTML = `
+      <div class="modal-bg" id="modal-bg">
+        <div class="modal">
+          <div class="modal-handle"></div>
+          <div class="cover-row">
+            <div class="cover-thumb" style="${g.cover?`background-image:url('${g.cover}')`:""}">${g.cover?"":"Intet cover"}</div>
+            <div>
+              <h2>${escapeHtml(g.title)}</h2>
+              <span class="barcode-chip mono">${escapeHtml(g.barcode)}</span>
+            </div>
+          </div>
+          <p class="desc">${escapeHtml(g.description) || "Ingen beskrivelse gemt."}</p>
+          ${g.photos && g.photos.length ? `<div class="modal-photos">${g.photos.map(p=>`<img src="${p}">`).join("")}</div>` : ""}
+          <div class="row" style="margin-top:18px">
+            <button class="btn btn-danger" id="btn-delete-game">Slet spil</button>
+          </div>
+        </div>
+      </div>
+    `;
+    document.getElementById("modal-bg").addEventListener("click", (e)=>{
+      if(e.target.id === "modal-bg") root.innerHTML = "";
+    });
+    document.getElementById("btn-delete-game").addEventListener("click", async ()=>{
+      await dbDelete(g.id);
+      root.innerHTML = "";
+      renderLibrary();
+    });
+  }
+
+  /* ---------------- Settings actions ---------------- */
+  const rawgKeyInput = document.getElementById("f-rawg-key");
+  rawgKeyInput.value = getRawgKey();
+  document.getElementById("btn-save-key").addEventListener("click", ()=>{
+    localStorage.setItem("rawgApiKey", rawgKeyInput.value.trim());
+    const s = document.getElementById("key-status");
+    s.textContent = "Gemt ✓"; s.className = "status-line ok";
+  });
+
+  document.getElementById("btn-export").addEventListener("click", async ()=>{
+    const games = await dbAll();
+    const blob = new Blob([JSON.stringify(games, null, 2)], {type:"application/json"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "game-shelf-backup.json";
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+  document.getElementById("btn-wipe").addEventListener("click", async ()=>{
+    if(confirm("Slet hele samlingen? Dette kan ikke fortrydes.")){
+      await dbClear();
+      renderLibrary();
+    }
+  });
+
+  /* ---------------- Utils ---------------- */
+  function escapeHtml(s){
+    return (s||"").replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  }
+  function escapeAttr(s){ return escapeHtml(s); }
+
+  /* ---------------- Init ---------------- */
+  openDB().then(renderLibrary);
+})();
+</script>
+</body>
+</html>
